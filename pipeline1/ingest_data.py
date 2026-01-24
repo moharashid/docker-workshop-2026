@@ -59,7 +59,7 @@ def run(pg_user, pg_pass, pg_host, pg_port, pg_db, year, month, chunksize, targe
     # DB parameters
     pg_user = 'root'
     pg_pass = 'root'
-    pg_host = 'localhost'
+    pg_host = 'pgdatabase'
     pg_port = 5432
     pg_db = 'ny_taxi'
 
