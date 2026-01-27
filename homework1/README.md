@@ -1,6 +1,6 @@
-# NYC Taxi Data Engineering Module 1 - November 2025
+# NYC Taxi Data Engineering Homework - November 2025
 
-This project demonstrates a complete end-to-end data engineering pipeline for NYC taxi data. The workflow includes **data ingestion from CSV and Parquet**, preprocessing, storing the data in a PostgreSQL database, and running everything inside Docker containers.
+This project demonstrates a complete **end-to-end data engineering pipeline** for NYC taxi data. The workflow includes **data ingestion from CSV and Parquet**, preprocessing, storing the data in a PostgreSQL database, and running everything inside **Docker containers**.
 
 ---
 
@@ -28,14 +28,14 @@ Goals:
 2. Preprocess data:  
    - Convert date columns to `datetime`  
    - Convert numeric IDs from `float` to `int`  
-   - Handle missing values  
-3. Ingest data into a **PostgreSQL database**.  
+   - Handle missing values (`NaN` / `<NA>`)  
+3. Ingest data into a **PostgreSQL database** using **SQLAlchemy**.  
 4. Perform analytical queries such as:
    - Count of trips by distance  
    - Pickup zones with the largest revenue  
    - Dropoff zones with the largest tips  
 
-All scripts are designed to be **CLI-friendly** using `click`.
+All scripts are CLI-friendly using `click` for easy parameterization.
 
 ---
 
@@ -47,9 +47,9 @@ homework1-ingest/
 ├── docker-compose.yml
 ├── pyproject.toml
 ├── uv.lock
-├── ingest_data.py       # Main ingestion script
-├── ingest_lookup.py     # CSV lookup table ingestion
-├── notebooks/           # Optional Jupyter notebooks
+├── homework1-nov-ingest.py       # Main ingestion script
+├── homework1-lookup-ingest.py    # CSV lookup table ingestion
+├── notebooks/                     # Optional Jupyter notebooks
 └── README.md
 ```
 
@@ -71,7 +71,7 @@ pip install uv
 uv sync --locked
 ```
 
-- This will create a `.venv` folder and install all dependencies from `pyproject.toml` and `uv.lock`.  
+- This creates a `.venv` folder and installs all dependencies from `pyproject.toml` and `uv.lock`.  
 - Activate the environment:
 
 ```bash
@@ -103,7 +103,7 @@ The ingestion script supports both **CSV** and **Parquet** files.
 #### Parquet
 
 ```bash
-python ingest_data.py \
+python homework1-nov-ingest.py \
   --pipeline parquet \
   --pg-user root \
   --pg-pass root \
@@ -119,7 +119,7 @@ python ingest_data.py \
 #### CSV
 
 ```bash
-python ingest_data.py \
+python homework1-lookup-ingest.py \
   --pipeline csv \
   --pg-user root \
   --pg-pass root \
@@ -135,12 +135,38 @@ python ingest_data.py \
 
 ## Dockerizing the Pipeline
 
+We created a **Docker image for ingestion** which builds a container to run the pipeline.
+
 ### Dockerfile Overview
 
-- Base image: `python:3.13-slim`  
-- Dependencies installed via `uv sync --locked`  
-- Copies ingestion scripts into container  
-- Sets `ENTRYPOINT` to run ingestion script with parameters
+```dockerfile
+# Start with slim Python 3.13 image for smaller size
+FROM python:3.13.11-slim
+
+# Copy uv binary from official uv image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+
+# Set working directory inside container
+WORKDIR /app
+
+# Add virtual environment to PATH
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Copy dependency files first (better caching)
+COPY "pyproject.toml" "uv.lock" ".python-version" ./
+
+# Install all dependencies (pandas, sqlalchemy, psycopg2)
+RUN uv sync --locked
+
+# Copy ingestion script
+COPY homework1-nov-ingest.py homework1-nov-ingest.py
+
+# Set entry point to run the ingestion script
+ENTRYPOINT [ "python", "homework1-nov-ingest.py" ]
+```
+
+- The image builds a virtual environment, installs all Python dependencies, and copies the ingestion script.
+- Running a container from this image **performs the ingestion automatically** with the parameters passed via CLI.
 
 ### docker-compose.yml Overview
 
@@ -149,6 +175,11 @@ Services:
 - **pgdatabase**: PostgreSQL instance  
 - **pgadmin**: Admin interface for PostgreSQL  
 - **volumes**: Persist database and pgAdmin data  
+
+Ports:
+
+- PostgreSQL exposed on `localhost:5433`  
+- pgAdmin exposed on `localhost:8085`
 
 ---
 
@@ -165,12 +196,6 @@ docker build -t homework1:v001 .
 ```bash
 docker-compose up -d
 ```
-
-- PostgreSQL will run on `localhost:5433`  
-- pgAdmin will run on `localhost:8085`  
-- Default credentials:
-  - PostgreSQL: `root` / `root` / `ny_taxi`  
-  - pgAdmin: `admin@admin.com` / `root`
 
 ### Run Ingestion Container
 
@@ -190,6 +215,9 @@ docker run -it --rm \
   --target-table yellow_taxi_trips_nov_2025
 ```
 
+- This container will download the data, process it in chunks, and ingest it into PostgreSQL.
+- CSV ingestion works similarly using the lookup ingestion script.
+
 ---
 
 ## Jupyter Notebook
@@ -201,7 +229,7 @@ docker run -it --rm \
 uv run jupyter notebook
 ```
 
-- Access notebooks in your browser to explore datasets and confirm the lookup CSV table.
+- Access notebooks in your browser to explore datasets, inspect columns, and verify preprocessing.
 
 ---
 
@@ -267,8 +295,8 @@ LIMIT 1;
 
 ```text
  +----------------+       +-----------------+       +----------------+
- | CSV / Parquet  |  -->  | Ingest Scripts  |  -->  | PostgreSQL DB  |
- |  Source Data   |       | (CSV / Parquet) |       |  (pgdatabase)  |
+ | CSV / Parquet  |  -->  | Ingest Container|  -->  | PostgreSQL DB  |
+ |  Source Data   |       | (Docker)        |       |  (pgdatabase)  |
  +----------------+       +-----------------+       +----------------+
          |                                                   |
          v                                                   v
@@ -276,10 +304,9 @@ LIMIT 1;
    for Data Exploration                                 (pgadmin container)
 ```
 
-- Data flows from CSV/Parquet files into ingestion scripts.  
-- Scripts process the data in chunks, converting types and handling nulls.  
-- Data is loaded into PostgreSQL running inside a Docker container.  
-- pgAdmin container provides a web interface to inspect the database.
+- The **Docker image** encapsulates all dependencies and the ingestion logic.
+- Running a container from the image ingests data automatically.
+- pgAdmin allows for easy database inspection and query execution.
 
 ---
 
